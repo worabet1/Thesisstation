@@ -402,14 +402,23 @@ int main(void) {
 			}
 			break;
 		case 11: // push panel1
-			ptg1 = 588;
+			ptg1 = 597;
 			activate1 = 1;
-			state = 12;
+			state = 115;
+			break;
+		case 115: // push panel1 back
+			if (activate1 == 0) {
+				ptg1 = 588;
+				activate1 = 1;
+
+				state = 12;
+			}
 			break;
 		case 12:  //  push panel2
 			if (activate1 == 0) {
+				ptg2 = 617;
 				activate2 = 1;
-				ptg2 = 615;
+
 				state = 13;
 			}
 			break;
