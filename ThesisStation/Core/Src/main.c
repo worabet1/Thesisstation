@@ -203,6 +203,8 @@ float zc[4];
 float pc[4];
 float rc[4];
 uint64_t initial_time = 0;
+uint64_t weight_time = 0;
+uint64_t bluetooth_time = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -374,6 +376,30 @@ int main(void) {
 			}
 			break;
 		case 0: // idle
+			if(loadcell.weightB + loadcell2.weightB + loadcell.weightA + loadcell2.weightA >= 1.80){
+				weight_time = micros();
+				state = 1;
+			}
+			break;
+		case 1: // detect drone weight for 5 sec
+			if(loadcell.weightB + loadcell2.weightB + loadcell.weightA + loadcell2.weightA <= 1.80){
+				state = 0;
+			}
+			if(micros() - weight_time >= 5000000){
+				state = 2;
+				bluetooth_time = micros();
+			}
+			break;
+		case 2:  // check bluetooth connection
+			TX_BUFFER[0] = '1';
+			HAL_UART_Transmit(&huart1, TX_BUFFER, 1, 10);
+			HAL_UART_Receive_IT(&huart1, RX_BUFFER, BUFFER_LEN);
+			if(inputchar == '1'){
+				state = 11;
+			}
+			if(micros() - bluetooth_time >= 5000000){
+				state = 0;
+			}
 			break;
 		case 11: // push panel1
 			ptg1 = 588;
@@ -517,23 +543,6 @@ int main(void) {
 			hx711_tare(&loadcell, 4, 1);
 			hx711_tare(&loadcell2, 4, 2);
 			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
-		}
-		sclk[1] = sclk[0];
-		if (cal == 1) {
-			hx711_calibration(&loadcell, 1, 270);
-			cal = 0;
-		}
-		if (cal == 2) {
-			hx711_calibration(&loadcell, 2, 270);
-			cal = 0;
-		}
-		if (cal == 3) {
-			hx711_calibration(&loadcell2, 1, 270);
-			cal = 0;
-		}
-		if (cal == 4) {
-			hx711_calibration(&loadcell2, 2, 270);
-			cal = 0;
 		}
 //	  Bluetooth
 //	  HAL_UART_Receive_IT(&huart1, RX_BUFFER, BUFFER_LEN);
@@ -1063,10 +1072,10 @@ static void MX_GPIO_Init(void) {
 }
 
 /* USER CODE BEGIN 4 */
-//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-//{
-//	inputchar = *RX_BUFFER;
-//}
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	inputchar = *RX_BUFFER;
+}
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == GPIO_PIN_6) {
 		if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_6) == 1) {
