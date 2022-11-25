@@ -7,17 +7,20 @@
 C_SRCS += \
 ../Core/Inc/Autofox_INA226.c \
 ../Core/Inc/VL6180X.c \
-../Core/Inc/hx711.c 
+../Core/Inc/hx711.c \
+../Core/Inc/lcd.c 
 
 OBJS += \
 ./Core/Inc/Autofox_INA226.o \
 ./Core/Inc/VL6180X.o \
-./Core/Inc/hx711.o 
+./Core/Inc/hx711.o \
+./Core/Inc/lcd.o 
 
 C_DEPS += \
 ./Core/Inc/Autofox_INA226.d \
 ./Core/Inc/VL6180X.d \
-./Core/Inc/hx711.d 
+./Core/Inc/hx711.d \
+./Core/Inc/lcd.d 
 
 
 # Each subdirectory must supply rules for building sources it contributes
@@ -27,7 +30,7 @@ Core/Inc/%.o Core/Inc/%.su: ../Core/Inc/%.c Core/Inc/subdir.mk
 clean: clean-Core-2f-Inc
 
 clean-Core-2f-Inc:
-	-$(RM) ./Core/Inc/Autofox_INA226.d ./Core/Inc/Autofox_INA226.o ./Core/Inc/Autofox_INA226.su ./Core/Inc/VL6180X.d ./Core/Inc/VL6180X.o ./Core/Inc/VL6180X.su ./Core/Inc/hx711.d ./Core/Inc/hx711.o ./Core/Inc/hx711.su
+	-$(RM) ./Core/Inc/Autofox_INA226.d ./Core/Inc/Autofox_INA226.o ./Core/Inc/Autofox_INA226.su ./Core/Inc/VL6180X.d ./Core/Inc/VL6180X.o ./Core/Inc/VL6180X.su ./Core/Inc/hx711.d ./Core/Inc/hx711.o ./Core/Inc/hx711.su ./Core/Inc/lcd.d ./Core/Inc/lcd.o ./Core/Inc/lcd.su
 
 .PHONY: clean-Core-2f-Inc
 

@@ -34,6 +34,10 @@ Embodied in 3 functions related to I2C reading/writing
 #include <math.h>
 #include "stm32f4xx_hal.h"
 
+
+
+
+
 //=============================================================================
 //Some helper macros for this source file
 
@@ -265,6 +269,7 @@ int32_t AutoFox_INA226_GetCurrent_uA(AutoFox_INA226* this)
 	int16_t theRegisterValue=0; // signed register, result in mA
 	AutoFox_INA226_ReadRegister(this,INA226_CURRENT, (uint16_t*)&theRegisterValue);
 	return (int32_t)theRegisterValue * this->mCurrentMicroAmpsPerBit;
+//	return (int32_t)theRegisterValue;
 }
 //----------------------------------------------------------------------------
 int32_t AutoFox_INA226_GetPower_uW(AutoFox_INA226* this)

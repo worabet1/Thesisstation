@@ -21,10 +21,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdlib.h>
+#include <stdio.h>
 #include "math.h"
+#include "lcd.h"
 #include "Autofox_INA226_c.h"
 #include "hx711.h"
 #include "hx711Config.h"
+#include <string.h>
 #define hx711_delay(x)    HAL_Delay(x)
 #include "VL6180X.h"
 #define TCAADDR  0xE0
@@ -45,6 +49,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 I2C_HandleTypeDef hi2c2;
 
 TIM_HandleTypeDef htim1;
@@ -52,6 +58,7 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
+TIM_HandleTypeDef htim10;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart6;
@@ -59,8 +66,10 @@ UART_HandleTypeDef huart6;
 /* USER CODE BEGIN PV */
 #define BUFFER_LEN  1
 uint8_t RX_BUFFER[BUFFER_LEN] = { 0 };
+char string[16];
+uint8_t RX_BUFFER2[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 uint8_t TX_BUFFER[BUFFER_LEN] = { 0 };
-int16_t inputchar;
+int32_t inputchar;
 int sclk[2] = { 0 };
 int led = 0;
 int sclk2[2] = { 0 };
@@ -70,9 +79,9 @@ uint64_t val_1 = 0;
 uint64_t val_2 = 0;
 uint64_t _micros = -4294967295;
 uint64_t timestamp = 0;
-uint64_t lasertime =0;
+uint64_t lasertime = 0;
 bool laser1err = 0;
-bool laser2err =0;
+bool laser2err = 0;
 int trig = 0;
 int distance = 0;
 int in1 = 0;
@@ -86,7 +95,7 @@ int in6 = 0;
 int pwm3 = 0;
 hx711_t loadcell;
 hx711_t loadcell2;
-uint16_t fllaser=0;
+uint16_t fllaser = 0;
 float weight1;
 float weight2;
 int hx711_channel = 1;
@@ -98,6 +107,8 @@ uint8_t loadcellc1 = 0;
 uint8_t loadcellc2 = 0;
 uint8_t loadcellc3 = 0;
 uint8_t loadcellc4 = 0;
+uint8_t ledred=0;
+uint8_t ledgreen=0;
 float tareweight1[5] = { 0, 0, 0, 0, 0 };
 float tareweight2[5] = { 0, 0, 0, 0, 0 };
 float tareweight3[5] = { 0, 0, 0, 0, 0 };
@@ -131,6 +142,11 @@ float Kd3 = 0;
 float Ki3 = 0;
 float sumpid3 = 0;
 float errorpid3[2] = { 0, 0 };
+float Kpc = 0.1;
+float Kdc = 0;
+float Kic = 0;
+float sumpidc = 0;
+float errorpidc[2] = { 0, 0 };
 float require3 = 0.0;
 int limitswitch1 = 0;
 int limitswitch2 = 0;
@@ -166,11 +182,11 @@ uint64_t EncoderTimeDiff2;
 int32_t EncoderPositionDiff3;
 uint64_t EncoderTimeDiff3;
 int emergencyswitch = 0;
-double theVoltage_V;
-double theCurrent_mA;
+double voltage_uV;
+double current_uA;
 double thePower_mA;
 const uint8_t INA226_IC2_ADDRESS = 0x40;
-const double SHUNT_RESISTOR_OHMS = 0.15;
+const double SHUNT_RESISTOR_OHMS = 0.005;
 AutoFox_INA226 ina226;
 float lux1;
 float range1;
@@ -188,12 +204,12 @@ uint64_t Timestamp_Encoder = 0;
 int state = -1;
 int emergency = 0;
 uint64_t chance = 0;
-float rscale1[4] = {-0.155, -0.153,0.05,0.280};
-float rscale2[4] = {-0.33 , -0.33 , 0.08 , 0.53};
-const float x[6] = {13085,10713,32300,38650,567.3,431};
-const float y[6] = {11768,8600,35100,48300,585,512.5};
-const float z[6] = {12850,5600,61200,31200,369.52,561.9};
-const float p[6] = {8100,6500,30500,70721,724.3,651.8};
+float rscale1[4] = { -0.155, -0.153, 0.05, 0.280 };
+float rscale2[4] = { -0.33, -0.33, 0.08, 0.53 };
+const float x[6] = { 13085, 10713, 32300, 38650, 567.3, 431 };
+const float y[6] = { 11768, 8600, 35100, 48300, 585, 512.5 };
+const float z[6] = { 12850, 5600, 61200, 31200, 369.52, 561.9 };
+const float p[6] = { 8100, 6500, 30500, 70721, 724.3, 651.8 };
 const float w = 1170;
 const float h = 1065;
 const float m = 1.56;
@@ -209,6 +225,26 @@ float rc[4];
 uint64_t initial_time = 0;
 uint64_t weight_time = 0;
 uint64_t bluetooth_time = 0;
+uint64_t bluetooth_timestamp = 0;
+uint64_t current_timestamp = 0;
+uint64_t lcd_timestamp = 0;
+uint64_t button_timestamp = 0;
+uint64_t charging_timestamp = 0;
+int row = 0;
+int col = 0;
+int joybutton[4] = { 0 };
+int joyx[3] = { 0 };
+int joyy[3] = { 0 };
+uint16_t adcdata[2] = { 0 };
+float ADCOutputConverted = 0.0;
+typedef struct {
+	ADC_ChannelConfTypeDef Config;
+	uint16_t data;
+} ADCStructure;
+ADCStructure ADCChannel[2] = { 0 };
+float chargingcurrent = 6.3;
+int chargemenu = 0;
+int once = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -222,6 +258,8 @@ static void MX_TIM4_Init(void);
 static void MX_TIM5_Init(void);
 static void MX_USART6_UART_Init(void);
 static void MX_I2C2_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_TIM10_Init(void);
 /* USER CODE BEGIN PFP */
 
 void hx711_delay_us();
@@ -248,6 +286,12 @@ void velocitymeasurement();
 void gotoposition(int unit);
 void setzero();
 void pwmdrive();
+void loadcell_flushing();
+void laser();
+void currentcontrol();
+void ADCPollingMethodInit();
+void ADCPollingMethodUpdate();
+void buttonfunction();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -291,11 +335,19 @@ int main(void)
   MX_TIM5_Init();
   MX_USART6_UART_Init();
   MX_I2C2_Init();
+  MX_ADC1_Init();
+  MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
+//	#define lcd_write(...) var_lcd((lcd_args){__VA_ARGS__});
 //  HAL_UART_Receive_IT(&huart1, RX_BUFFER, BUFFER_LEN);
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_2, 1);
-  	HAL_Delay(100);
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_2, 0);
+	ADCPollingMethodInit();
+	lcd_init();
+	lcd_write("Initializing...", " ");
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, 0);
+	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_2, 1);
+	HAL_Delay(1000);
+	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_2, 0);
+	HAL_Delay(500);
 	HAL_TIM_Base_Start_IT(&htim2);
 	HAL_TIM_Base_Start_IT(&htim3);
 	HAL_TIM_Base_Start_IT(&htim4);
@@ -310,8 +362,8 @@ int main(void)
 	hx711_coef_set(&loadcell, 1, 1); // read after calibration
 	hx711_init(&loadcell2, GPIOC, GPIO_PIN_2, GPIOC, GPIO_PIN_3);
 	hx711_coef_set(&loadcell2, 1, 1); // read after calibration
-//  AutoFox_INA226_Constructor(&ina226);
-//  AutoFox_INA226_Init(&ina226,INA226_IC2_ADDRESS,SHUNT_RESISTOR_OHMS,10);
+	AutoFox_INA226_Constructor(&ina226);
+	AutoFox_INA226_Init(&ina226, INA226_IC2_ADDRESS, SHUNT_RESISTOR_OHMS, 10);
 //  AutoFox_INA226_setupCalibration(&ina226,SHUNT_RESISTOR_OHMS,10);
 	tcaselect(0);
 	HAL_Delay(10);
@@ -320,194 +372,372 @@ int main(void)
 	tcaselect(1);
 	HAL_Delay(10);
 	VL6180X_Init(&hi2c2);
-	xr[0] = (m*(h-x[5])*(w-x[4]))/(h*w);
-	xr[1] = (m*(h-x[5])*x[4])/(h*w);
-	xr[2] = (m*x[5]*(w-x[4]))/(h*w);
-	xr[3] = (m*x[5]*x[4])/(h*w);
-	yr[0] = (m*(h-y[5])*(w-y[4]))/(h*w);
-	yr[1] = (m*(h-y[5])*y[4])/(h*w);
-	yr[2] = (m*y[5]*(w-y[4]))/(h*w);
-	yr[3] = (m*y[5]*y[4])/(h*w);
-	zr[0] = (m*(h-z[5])*(w-z[4]))/(h*w);
-	zr[1] = (m*(h-z[5])*z[4])/(h*w);
-	zr[2] = (m*z[5]*(w-z[4]))/(h*w);
-	zr[3] = (m*z[5]*z[4])/(h*w);
-	pr[0] = (m*(h-p[5])*(w-p[4]))/(h*w);
-	pr[1] = (m*(h-p[5])*p[4])/(h*w);
-	pr[2] = (m*p[5]*(w-p[4]))/(h*w);
-	pr[3] = (m*p[5]*p[4])/(h*w);
-	xc[0] = x[0]/xr[0];
-	xc[1] = x[1]/xr[1];
-	xc[2] = x[2]/xr[2];
-	xc[3] = x[3]/xr[3];
-	yc[0] = y[0]/yr[0];
-	yc[1] = y[1]/yr[1];
-	yc[2] = y[2]/yr[2];
-	yc[3] = y[3]/yr[3];
-	zc[0] = z[0]/zr[0];
-	zc[1] = z[1]/zr[1];
-	zc[2] = z[2]/zr[2];
-	zc[3] = z[3]/zr[3];
-	pc[0] = p[0]/pr[0];
-	pc[1] = p[1]/pr[1];
-	pc[2] = p[2]/pr[2];
-	pc[3] = p[3]/pr[3];
+	xr[0] = (m * (h - x[5]) * (w - x[4])) / (h * w);
+	xr[1] = (m * (h - x[5]) * x[4]) / (h * w);
+	xr[2] = (m * x[5] * (w - x[4])) / (h * w);
+	xr[3] = (m * x[5] * x[4]) / (h * w);
+	yr[0] = (m * (h - y[5]) * (w - y[4])) / (h * w);
+	yr[1] = (m * (h - y[5]) * y[4]) / (h * w);
+	yr[2] = (m * y[5] * (w - y[4])) / (h * w);
+	yr[3] = (m * y[5] * y[4]) / (h * w);
+	zr[0] = (m * (h - z[5]) * (w - z[4])) / (h * w);
+	zr[1] = (m * (h - z[5]) * z[4]) / (h * w);
+	zr[2] = (m * z[5] * (w - z[4])) / (h * w);
+	zr[3] = (m * z[5] * z[4]) / (h * w);
+	pr[0] = (m * (h - p[5]) * (w - p[4])) / (h * w);
+	pr[1] = (m * (h - p[5]) * p[4]) / (h * w);
+	pr[2] = (m * p[5] * (w - p[4])) / (h * w);
+	pr[3] = (m * p[5] * p[4]) / (h * w);
+	xc[0] = x[0] / xr[0];
+	xc[1] = x[1] / xr[1];
+	xc[2] = x[2] / xr[2];
+	xc[3] = x[3] / xr[3];
+	yc[0] = y[0] / yr[0];
+	yc[1] = y[1] / yr[1];
+	yc[2] = y[2] / yr[2];
+	yc[3] = y[3] / yr[3];
+	zc[0] = z[0] / zr[0];
+	zc[1] = z[1] / zr[1];
+	zc[2] = z[2] / zr[2];
+	zc[3] = z[3] / zr[3];
+	pc[0] = p[0] / pr[0];
+	pc[1] = p[1] / pr[1];
+	pc[2] = p[2] / pr[2];
+	pc[3] = p[3] / pr[3];
 	rc[0] = 27306.9453;
 	rc[1] = 23035.0215;
 	rc[2] = 100504.188;
 	rc[3] = 124988.211;
+	TX_BUFFER[0] = '1';
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
-		switch (state) {
-		case -1: // initial set zero
-			zerostate = 1;
-			state = -2;
-			break;
-		case -2: // set zero finish wait for 5 sec
-			if(zerostate == 0){
-				initial_time = micros();
-				state = -3;
-			}
-			break;
-		case -3: // after w8 for 10 sec tare loadcell
-			if(micros() - initial_time >= 10000000){
-				hx711_tare(&loadcell, 4, 1);
-				hx711_tare(&loadcell2, 4, 2);
-				hx711_calibration(&loadcell, 2, rc[0]);
-				hx711_calibration(&loadcell2, 2,  rc[1]);
-				hx711_calibration(&loadcell, 1,  rc[2]);
-				hx711_calibration(&loadcell2, 1,  rc[3]);
-				state = 0;
-			}
-			break;
-		case 0: // idle
-			if(loadcell.weightB + loadcell2.weightB + loadcell.weightA + loadcell2.weightA >= 1.80){
-				weight_time = micros();
-				state = 1;
-			}
-			break;
-		case 1: // detect drone weight for 5 sec
-			if(loadcell.weightB + loadcell2.weightB + loadcell.weightA + loadcell2.weightA <= 1.80){
-				state = 0;
-			}
-			if(micros() - weight_time >= 5000000){
-				state = 2;
-				bluetooth_time = micros();
-			}
-			break;
-		case 2:  // check bluetooth connection
-			TX_BUFFER[0] = '1';
-			HAL_UART_Transmit(&huart1, TX_BUFFER, 1, 10);
-			HAL_UART_Receive_IT(&huart1, RX_BUFFER, BUFFER_LEN);
-			if(inputchar == '1'){
-				state = 11;
-			}
-			if(micros() - bluetooth_time >= 5000000){
-				state = 0;
-			}
-			break;
-		case 11: // push panel1
-			ptg1 = 597;
-			activate1 = 1;
-			state = 115;
-			break;
-		case 115: // push panel1 back
-			if (activate1 == 0) {
-				ptg1 = 588;
-				activate1 = 1;
+		if (ledred==1){
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 1);
 
-				state = 12;
-			}
-			break;
-		case 12:  //  push panel2
-			if (activate1 == 0) {
-				ptg2 = 617;
-				activate2 = 1;
+		}
+		else{
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 0);
 
-				state = 13;
-			}
-			break;
-		case 13: // check orientation
-			if (activate2 == 0) {
-				if (range1 <= 180 && range2 >= 200) {
-					state = 142;
+		}
+		if (ledgreen==1){
+					HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, 1);
+
 				}
-				if (range2 <= 180 && range1 >= 200) {
-					state = 141;
-				}else{
-					if(chance == 0){
+				else{
+					HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, 0);
+
+				}
+		buttonfunction();
+		if (emergency == 0) {
+			switch (state) {
+			case -1: // initial set zero
+				zerostate = 1;
+				state = -2;
+				break;
+			case -2: // set zero finish wait for 5 sec
+				if (zerostate == 0) {
+					initial_time = micros();
+					state = -3;
+				}
+				break;
+			case -3: // after w8 for 10 sec tare loadcell
+				loadcell_flushing();
+				if (micros() - initial_time >= 15000000) {
+					hx711_tare(&loadcell, 4, 1);
+					hx711_tare(&loadcell2, 4, 2);
+					hx711_calibration(&loadcell, 2, rc[0]);
+					hx711_calibration(&loadcell2, 2, rc[1]);
+					hx711_calibration(&loadcell, 1, rc[2]);
+					hx711_calibration(&loadcell2, 1, rc[3]);
+					state = 0;
+					lcd_write("Ready for", "drone to land");
+				}
+				break;
+			case 0: // idle
+				//	  Load cell
+				loadcell_flushing();
+				if (loadcell.weightB + loadcell2.weightB + loadcell.weightA
+						+ loadcell2.weightA >= 1.80) {
+					weight_time = micros();
+					state = 1;
+					lcd_write("weight detected", "wait for 5 sec");
+				}
+				if (joybutton[3] == 1) {
+					lcd_write("Pushing drone", "to charging area");
+					state = 11;
+				}
+				break;
+			case 1: // detect drone weight for 5 sec
+				//	  Load cell
+				loadcell_flushing();
+				if (loadcell.weightB + loadcell2.weightB + loadcell.weightA
+						+ loadcell2.weightA <= 1.80) {
+					state = 0;
+					lcd_write("Ready for", "drone to land");
+				}
+				if (micros() - weight_time >= 5000000) {
+					state = 2;
+					bluetooth_time = micros();
+					lcd_write("Detecting drone", "communication...");
+				}
+				break;
+			case 2:  // check bluetooth connection
+				TX_BUFFER[0] = '1';
+				if (micros() - bluetooth_timestamp >= 500000) {
+					bluetooth_timestamp = micros();
+					HAL_UART_Transmit(&huart1, TX_BUFFER, 1, 10);
+				}
+				HAL_UART_Receive_IT(&huart1, RX_BUFFER, BUFFER_LEN);
+				if (inputchar == '1') {
+					lcd_write("Pushing drone", "to charging area");
+					state = 11;
+					inputchar = '0';
+				}
+				if (micros() - bluetooth_time >= 5000000) {
+					lcd_write("Ready for", "drone to land");
+					state = 0;
+				}
+				break;
+			case 11: // push panel1
+				ptg1 = 597;
+				activate1 = 1;
+				state = 115;
+				break;
+			case 115: // push panel1 back
+				if (activate1 == 0) {
+					ptg1 = 583;
+					activate1 = 1;
+
+					state = 12;
+				}
+				break;
+			case 12:  //  push panel2
+				if (activate1 == 0) {
+					ptg2 = 615;
+					activate2 = 1;
+					state = 13;
+				}
+				break;
+			case 13: // check orientation
+				//laser sensor
+				laser();
+				if (activate2 == 0) {
+					if (range1 <= 180 && range2 >= 200) {
+						state = 142;
+						chance = 0;
+					}
+					if (range2 <= 180 && range1 >= 200) {
+						state = 141;
+						chance = 0;
+					}
+					if (chance == 0) {
 						chance = micros();
 					}
-					if(micros() - chance >= 3000000){
+					if (micros() - chance >= 3000000) {
 						state = 132;
 						chance = 0;
 					}
 				}
-			}
-			break;
-		case 132:  //error
-			zerostate = 1;
-			state = 0;
-		    break;
-		case 141: // push panel2 more
-			ptg2 = 680;
-			activate2 = 1;
-			state = 1412;
-			break;
-		case 1412: // push finish drone in charging area
-			if (activate2 == 0) {
-				state = 15;
-			}
-			break;
-		case 142: // push panel1 more
-			ptg1 = 655;
-			activate1 = 1;
-			state = 1422;
-			break;
-		case 1422: // push finish drone in charging area
-			if (activate1 == 0) {
-				state = 15;
-			}
-			break;
-		case 15: // Charging state
-			break;
-		case 16: // push panel1 back
-			ptg1 = 0;
-			activate1 = 1;
-			state = 17;
-			break;
-		case 17: // after panel1 back to 50 cm panel2 will go back too
-			if (distancemetre1 <= 500) {
-				ptg2 = 0;
-				activate2 = 1;
-				state = 18;
-			}
-			break;
-		case 18: // after panel1 and panel 2 go back slider will move done back to center
-			if (distancemetre1 <= 500 && distancemetre2 <= 250) {
-				ptg3 = 635;
-				in5 = 1;
-				in6 = 0;
-				activate3 = 1;
-				state = 19;
-			}
-			break;
-		case 19: // after drone slide to center set zero
-			if (activate3 == 0) {
+				break;
+			case 132:  //error get back to home
+				lcd_write("Error can't find", "going back");
 				zerostate = 1;
-				state = 0;
+				state = 133;
+				break;
+			case 133: // get back to home
+				if (zerostate == 0) {
+					lcd_write("Ready for", "drone to land");
+					state = 0;
+				}
+				break;
+			case 141: // push panel2 more
+				ptg2 = 685;
+				activate2 = 1;
+				state = 1412;
+				break;
+			case 1412: // push finish drone in charging area
+				if (activate2 == 0) {
+					state = 15;
+				}
+				break;
+			case 142: // push panel1 more
+				ptg1 = 655;
+				activate1 = 1;
+				state = 1422;
+				break;
+			case 1422: // push finish drone in charging area
+				if (activate1 == 0) {
+					lcd_write("Charging....", " ");
+					state = 15;
+				}
+				break;
+			case 15: // Charging state
+				HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, 1);
+				HAL_UART_Receive_IT(&huart1, RX_BUFFER2, 8);
+				//		current and voltage sensor
+				voltage_uV = inputchar;
+				HAL_Delay(1);
+				current_uA = AutoFox_INA226_GetCurrent_uA(&ina226);
+				HAL_Delay(1);
+				currentcontrol();
+				voltage_uV = voltage_uV - current_uA/20000;
+				if (micros() - lcd_timestamp >= 100000) {
+					lcd_timestamp = micros();
+					TX_BUFFER[0] = '2';
+					HAL_UART_Transmit(&huart1, TX_BUFFER, 1, 10);
+					if (chargemenu == 0) {
+						sprintf(string, "Now:%d.%dV %d.%dA ",
+								(int) (voltage_uV / 1000),
+								((int) voltage_uV % 1000) / 10,
+								(int) (current_uA / 1000000),
+								((int) current_uA % 1000000) / 10000);
+						lcd_put_cur(1, 0);
+						for (int c3 = 0; c3 <= 100; c3++) {
+							hx711_delay_us();
+						}
+						lcd_send_string(string);
+					}
+					if (chargemenu == 1) {
+						sprintf(string, "%d.%dA Now:%d.%dA ",
+								(int) (chargingcurrent),
+								((int) (chargingcurrent * 10)) % 10,
+								(int) (current_uA / 1000000),
+								((int) current_uA % 1000000) / 10000);
+						lcd_put_cur(1, 0);
+						for (int c3 = 0; c3 <= 100; c3++) {
+							hx711_delay_us();
+						}
+						lcd_send_string(string);
+					}
+					if (chargemenu == -1) {
+						sprintf(string, "Now:%d.%dV",
+								(int) (voltage_uV / 1000),
+								((int) voltage_uV % 1000) / 10);
+						lcd_put_cur(1, 0);
+						for (int c3 = 0; c3 <= 100; c3++) {
+							hx711_delay_us();
+						}
+						lcd_send_string(string);
+					}
+				}
+				if (chargemenu == 0) {
+					if (joyx[2] == 1) {
+						lcd_write("Adjusting CC:", " ");
+						chargemenu = 1;
+					}
+					if (joyx[2] == -1) {
+						lcd_write("Finish charged?", " ");
+						chargemenu = -1;
+					}
+				}
+				if (chargemenu == 1) {
+					if (joyx[2] == -1) {
+						lcd_write("Charging....", " ");
+						chargemenu = 0;
+					}
+					if (joyy[2] == 1)
+						chargingcurrent += 0.1;
+					if (joyy[2] == -1)
+						chargingcurrent -= 0.1;
+					if (chargingcurrent >= 10) {
+						chargingcurrent = 10;
+					}
+					if (chargingcurrent <= 0) {
+						chargingcurrent = 0;
+					}
+				}
+				if (chargemenu == -1) {
+					if (joyx[2] == 1) {
+						lcd_write("Charging....", " ");
+						chargemenu = 0;
+					}
+					if (joybutton[3] == 1) {
+						lcd_write("Pushing drone", "back to center");
+						chargemenu = 0;
+						state = 16;
+						HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, 0);
+					}
+				}
+				if (voltage_uV >= 25180 && chargingcurrent <= 0) {
+					lcd_write("Pushing drone", "back to center");
+					state = 16;
+					HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, 0);
+					chargemenu = 0;
+				}
+				break;
+			case 16: // push panel1 back
+				HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, 0);
+				ptg1 = 0;
+				activate1 = 1;
+				state = 17;
+				break;
+			case 17: // after panel1 back to 50 cm panel2 will go back too
+				if (distancemetre1 <= 500) {
+					ptg2 = 0;
+					activate2 = 1;
+					state = 18;
+				}
+				break;
+			case 18: // after panel1 and panel 2 go back slider will move done back to center
+				if (distancemetre1 <= 500 && distancemetre2 <= 250) {
+					ptg3 = 635;
+					in5 = 1;
+					in6 = 0;
+					activate3 = 1;
+					state = 19;
+				}
+				break;
+			case 19: // after drone slide to center set zero
+				if (activate3 == 0) {
+					lcd_write("Go back to", "initialize state");
+					zerostate = 1;
+					state = 20;
+					activate2 = 0;
+				}
+				break;
+			case 20:
+				if (zerostate == 0) {
+					weight_time = micros();
+					lcd_write("wait for drone", "to fly off");
+					state = 21;
+				}
+				break;
+			case 21:
+				loadcell_flushing();
+				if (micros() - weight_time >= 5000000) {
+					if (loadcell.weightB + loadcell2.weightB + loadcell.weightA
+							+ loadcell2.weightA <= 1.80) {
+						state = 0;
+						lcd_write("Ready for", "drone to land");
+					}
+				}
+
+				break;
+			case 22: //emergency released
+				if (emergency == 0) {
+					lcd_write("Go back to", "initialize state");
+					zerostate = 1;
+					state = 23;
+				}
+				break;
+			case 23:
+				if (zerostate == 0) {
+					lcd_write("Ready for", "drone to land");
+					state = 0;
+				}
+			default:
+				break;
 			}
-			break;
-		default:
-			break;
 		}
-		if (emergency == 1) {
-			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
-		} else {
-			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
+//		laser();
+		if (state == 22) {
+				if(once == 0){
+					once = 1;
+					lcd_write("Emergency", "detected");
+			}
 		}
 //	  Limit switch
 		limitswitchlowpass();
@@ -519,6 +749,7 @@ int main(void)
 		if (micros() - Timestamp_Encoder >= 100) {
 			velocitymeasurement();
 		}
+//		laser();
 //	  go to position
 		if (activate1 == 1 && zerostate == 0) {
 			gotoposition(1);
@@ -535,102 +766,17 @@ int main(void)
 		} else if (activate3 == 1 && zerostate == 0) {
 			require3 = 0;
 		}
-
 //	  PWM drive
 		pwmdrive();
-		//	  Load cell
-		if (micros() - hx_711timestamp >= 500000) {
-			if (loadcellc1 == 10 && loadcellc2 == 10 && loadcellc3 == 10
-					&& loadcellc4 == 10) {
-				hx_711timestamp = micros();
-				loadcellc1 = 4;
-				loadcellc2 = 4;
-				loadcellc3 = 4;
-				loadcellc4 = 4;
-				ave1 = 0;
-				ave2 = 0;
-				ave3 = 0;
-				ave4 = 0;
-			}
-		}
-		hx711_weight(&loadcell, 4, 1);
-		hx711_weight(&loadcell2, 4, 2);
-		sclk[0] = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
-		if (sclk[0] == 0 && sclk[1] == 1) {
-			hx711_tare(&loadcell, 4, 1);
-			hx711_tare(&loadcell2, 4, 2);
-			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
-		}
-//	  Bluetooth
-//	  HAL_UART_Receive_IT(&huart1, RX_BUFFER, BUFFER_LEN);
-//	  if(inputchar == '1')
-//	      {
-//		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
-//	      }
-//	  else if(inputchar == '0')
-//	      {
-//	      	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
-//	      }
-//	  sclk[0] = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
-//	  if(sclk[0] == 0 && sclk[1] == 1){
-//		  if(led == 0){
-//			  led = 1;
-//			  TX_BUFFER[0] = '1';
-//		  }
-//		  else if(led == 1){
-//			  led = 0;
-//			  TX_BUFFER[0] = '0';
-//		  }
-//	HAL_UART_Transmit(&huart1, TX_BUFFER, 1, 10);
-//	  }
-//	sclk[1] = sclk[0];
-
-		//current and voltage sensor
-//	 theVoltage_V = AutoFox_INA226_GetShuntVoltage_uV(&ina226) ;
-//	 HAL_Delay (100);
-//	 theCurrent_mA = AutoFox_INA226_GetCurrent_uA(&ina226) ;
-//	 HAL_Delay (100);
-//	 thePower_mA = AutoFox_INA226_GetPower_uW(&ina226);
-//	 HAL_Delay (100);
-
-		//laser sensor
-		if(HAL_GetTick()-lasertime>=3)
-		{
-			lasertime= HAL_GetTick();
-			switch (fllaser){
-			case 0:
-				tcaselect(0);
-				fllaser=1;
-				break;
-			case 1:
-				range1= VL6180X_readRange();
-				fllaser=2;
-				break;
-			case 2 :
-				tcaselect(1);
-				fllaser=3;
-				break;
-			case 3 :
-				range2 = VL6180X_readRange();
-				fllaser=0;
-				break;
-			}
-
-
-		}
-//		tcaselect(0);
-//		HAL_Delay(1);
-////		lux1 = VL6180X_readLux(VL6180X_ALS_GAIN_5);
-//		range1 = VL6180X_readRange();
-//		tcaselect(1);
-//		HAL_Delay(1);
-////		lux2 = VL6180X_readLux(VL6180X_ALS_GAIN_5);
-//		range2 = VL6180X_readRange();
-//	 setResistance(check);
-//	 HAL_Delay (100);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+//		if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_6) == 1) {
+////			lcd_write('Emergency', 'detected');
+//			emergency = 0;}
+//		else{
+//			emergency = 1;
+//		}
 	}
   /* USER CODE END 3 */
 }
@@ -648,6 +794,7 @@ void SystemClock_Config(void)
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
@@ -664,6 +811,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+
   /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
@@ -677,6 +825,58 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_14;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -974,6 +1174,37 @@ static void MX_TIM5_Init(void)
 }
 
 /**
+  * @brief TIM10 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM10_Init(void)
+{
+
+  /* USER CODE BEGIN TIM10_Init 0 */
+
+  /* USER CODE END TIM10_Init 0 */
+
+  /* USER CODE BEGIN TIM10_Init 1 */
+
+  /* USER CODE END TIM10_Init 1 */
+  htim10.Instance = TIM10;
+  htim10.Init.Prescaler = 0;
+  htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim10.Init.Period = 65535;
+  htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM10_Init 2 */
+
+  /* USER CODE END TIM10_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -1060,11 +1291,11 @@ static void MX_GPIO_Init(void)
                           |GPIO_PIN_12, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2|GPIO_PIN_3|LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4|LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_15
-                          |GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_12
+                          |GPIO_PIN_15|GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_2, GPIO_PIN_RESET);
@@ -1099,6 +1330,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PA4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /*Configure GPIO pins : PB0 PB1 PB2 PB15
                            PB5 */
   GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_15
@@ -1108,8 +1346,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB14 */
-  GPIO_InitStruct.Pin = GPIO_PIN_14;
+  /*Configure GPIO pin : PB12 */
+  GPIO_InitStruct.Pin = GPIO_PIN_12;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PB13 PB14 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_14;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
@@ -1144,15 +1389,31 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-	inputchar = *RX_BUFFER;
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+	if (state == 2)
+		inputchar = *RX_BUFFER;
+	if (state == 15) {
+		if (RX_BUFFER2[3] == 0 && RX_BUFFER2[4] == 0 && RX_BUFFER2[5] == 0
+				&& RX_BUFFER2[6] == 0 && RX_BUFFER2[7] == 0) {
+			inputchar = 0;
+		} else {
+			inputchar = ((int) RX_BUFFER2[3] - 48) * 10000
+					+ (((int) RX_BUFFER2[4] - 48) * 1000)
+					+ (((int) RX_BUFFER2[5] - 48) * 100)
+					+ (((int) RX_BUFFER2[6] - 48) * 10)
+					+ ((int) RX_BUFFER2[7] - 48);
+		}
+	}
 }
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == GPIO_PIN_6) {
 		if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_6) == 1) {
+//			lcd_write('Emergency', 'detected');
+			state = 22;
 			emergency = 1;
-		} else {
+			once = 0;
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, 0);
+		} else if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_6) == 0) {
 			emergency = 0;
 		}
 	}
@@ -1231,20 +1492,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			errorpid3[0] = velocitypulse3
 					- require3 * 12.0 * 64.0 * 4.0 * 15.0 / 10.0 / 12.0 / 5.08;
 		} else if (require3 > 0) {
-			errorpid3[0] = require3 * 12.0 * 64.0 * 4.0 * 15.0 / 10.0 / 12.0/5.08
-					- velocitypulse3;
+			errorpid3[0] = require3 * 12.0 * 64.0 * 4.0 * 15.0 / 10.0 / 12.0
+					/ 5.08 - velocitypulse3;
 		}
 		sumpid3 = sumpid3 + errorpid3[0];
 		pwm3 = (Kp3 * errorpid3[0] + Ki3 * sumpid3
 				+ Kd3 * (errorpid3[0] - errorpid3[1]));
 		errorpid3[1] = errorpid3[0];
 		if (pwm3 < 0) {
-							pwm3 = -pwm3;
-							in5 = !in5;
-							in6 = !in6;
-						}
-		if (pwm3 > 2300)
-			pwm3 = 2300;
+			pwm3 = -pwm3;
+			in5 = !in5;
+			in6 = !in6;
+		}
+		if (pwm3 > 4000)
+			pwm3 = 4000;
 		if ((limitswitch3 == 1 && in5 == 0 && in6 == 1) || emergency == 1) {
 			pwm3 = 0;
 		}
@@ -1721,10 +1982,10 @@ void setzero() {
 		}
 		in5 = 0;
 		in6 = 1;
-		if (distancemetre3 <= 100){
+		if (distancemetre3 <= 100) {
 			require3 = -20;
-		}
-		else require3 = -40;
+		} else
+			require3 = -40;
 
 		if (limitswitch1 == 1) {
 			error1 = TIM1->CNT;
@@ -1752,15 +2013,153 @@ void setzero() {
 	oldzerostate = zerostate;
 }
 void pwmdrive() {
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, in1);
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, in2);
-	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, pwm1);
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, in3);
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, in4);
-	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, pwm2);
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, in5);
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, in6);
-	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, pwm3);
+	if (emergency == 1) {
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, 0);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, 0);
+		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, 0);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, 0);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, 0);
+		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, 0);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, 0);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, 0);
+		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, 0);
+	} else {
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, in1);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, in2);
+		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, pwm1);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, in3);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, in4);
+		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, pwm2);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, in5);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, in6);
+		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, pwm3);
+	}
+
+}
+void loadcell_flushing() {
+	if (micros() - hx_711timestamp >= 500000) {
+		if (loadcellc1 == 10 && loadcellc2 == 10 && loadcellc3 == 10
+				&& loadcellc4 == 10) {
+			hx_711timestamp = micros();
+			loadcellc1 = 4;
+			loadcellc2 = 4;
+			loadcellc3 = 4;
+			loadcellc4 = 4;
+			ave1 = 0;
+			ave2 = 0;
+			ave3 = 0;
+			ave4 = 0;
+		}
+	}
+	hx711_weight(&loadcell, 4, 1);
+	hx711_weight(&loadcell2, 4, 2);
+}
+void laser() {
+	if (HAL_GetTick() - lasertime >= 3) {
+		lasertime = HAL_GetTick();
+		switch (fllaser) {
+		case 0:
+			tcaselect(0);
+			fllaser = 1;
+			break;
+		case 1:
+			range1 = VL6180X_readRange();
+			fllaser = 2;
+			break;
+		case 2:
+			tcaselect(1);
+			fllaser = 3;
+			break;
+		case 3:
+			range2 = VL6180X_readRange();
+			fllaser = 0;
+			break;
+		}
+	}
+}
+#define amp 400000
+void currentcontrol() {
+	if (micros() - current_timestamp >= 100000) {
+		current_timestamp = micros();
+		if (current_uA <= chargingcurrent) {
+			check += 1;
+		}
+		if (current_uA >= chargingcurrent) {
+			check -= 1;
+		}
+		if (check >= 99) {
+			check = 99;
+		}
+		if (check <= 0) {
+			check = 0;
+		}
+		setResistance(check);
+		if(voltage_uV >= 25200){
+			chargingcurrent -= 0.1;
+		}
+	}
+}
+void ADCPollingMethodInit() {
+	//config all ADC Channel
+	ADCChannel[0].Config.Channel = ADC_CHANNEL_14;
+	ADCChannel[0].Config.Rank = 1;
+	ADCChannel[0].Config.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+
+	ADCChannel[1].Config.Channel = ADC_CHANNEL_15;
+	ADCChannel[1].Config.Rank = 1;
+	ADCChannel[1].Config.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+}
+void ADCPollingMethodUpdate() {
+	for (int i = 0; i < 2; i++) {
+		HAL_ADC_ConfigChannel(&hadc1, &ADCChannel[i].Config);
+		HAL_ADC_Start(&hadc1);
+		HAL_ADC_PollForConversion(&hadc1, 10);
+		ADCChannel[i].data = HAL_ADC_GetValue(&hadc1);
+		HAL_ADC_Stop(&hadc1);
+	}
+}
+void buttonfunction() {
+	ADCPollingMethodUpdate();
+	joybutton[0] = (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) + 1) % 2;
+	if (ADCChannel[0].data >= 3500) {
+		joyx[0] = 1;
+	} else if (ADCChannel[0].data <= 500) {
+		joyx[0] = -1;
+	} else {
+		joyx[0] = 0;
+	}
+	if (ADCChannel[1].data >= 3500) {
+		joyy[0] = 1;
+	} else if (ADCChannel[1].data <= 500) {
+		joyy[0] = -1;
+	} else {
+		joyy[0] = 0;
+	}
+	if (joyx[0] != joyx[1]) {
+		joyx[2] = joyx[0];
+	} else {
+		joyx[2] = 0;
+	}
+	if (joyy[0] != joyy[1]) {
+		joyy[2] = joyy[0];
+	} else {
+		joyy[2] = 0;
+	}
+	if (joybutton[0] == 1 && joybutton[1] == 0) {
+		button_timestamp = micros();
+		joybutton[2] = 1;
+	} else if (joybutton[0] == 0 && joybutton[1] == 1) {
+		joybutton[2] = 0;
+	}
+	if (micros() - button_timestamp >= 5000000 && joybutton[2] == 1) {
+		joybutton[3] = 1;
+		joybutton[2] = 0;
+	} else {
+		joybutton[3] = 0;
+	}
+	joyx[1] = joyx[0];
+	joyy[1] = joyy[0];
+	joybutton[1] = joybutton[0];
 }
 /* USER CODE END 4 */
 
@@ -1794,4 +2193,3 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-
